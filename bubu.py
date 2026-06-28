@@ -499,16 +499,21 @@ async def single_cc_check(event):
         else:
             status_header = "❌ DECLINED"
 
-        # --- Compact A + Site conditional ---
-        bin_info = f"{brand} - {bin_type} - {level}" if brand != '-' else '-'
-        country_info = f"{country} {flag}" if country != '-' else '-'
+        final_resp = f"""{status_header}
 
-        final_resp = f"""{status_header} — {result.get('gateway', 'Unknown')} — {result.get('price', '-')}
-💳 <code>{result['card']}</code>
-🏦 {bank} • {bin_info} • {country_info}"""
+💳 CC <code>{result['card']}</code>
 
-        if result['status'] in ('Charged', 'Approved'):
-            final_resp += f"\n🌐 {result.get('site', 'Unknown')}"
+🛒 Gateway {result.get('gateway', 'Unknown')}
+📝 Response {result['message'][:150]}
+💸 Price {result.get('price', '-')}
+
+🆔 BIN Info {brand} - {bin_type} - {level}
+🏦 Bank {bank}
+🥰 Country {country} {flag}
+
+👤 Checked by @{username}
+
+🐱 Make By MEOW MEOW"""
 
         await status_msg.edit(premium_emoji(final_resp), parse_mode='html')
 
@@ -605,6 +610,7 @@ async def multi_cc_check(event):
                 current_sites = load_sites()
                 current_proxies = load_proxies()
                 if not current_sites or not current_proxies:
+                    # Fix: card loss — mark as declined instead of breaking
                     async with lock:
                         checked_count[0] += 1
                         declined.append({
@@ -620,8 +626,10 @@ async def multi_cc_check(event):
 
                 res = await check_card_with_retry(card, current_sites, current_proxies, max_retries=3)
 
+                # --- BIN info ---
                 brand, bin_type, level, bank, country, flag = await get_bin_info(card.split('|')[0])
 
+                # --- Status header ---
                 if res['status'] == 'Charged':
                     status_header = "💎 CHARGED"
                     charged.append(res)
@@ -632,16 +640,23 @@ async def multi_cc_check(event):
                     status_header = "❌ DECLINED"
                     declined.append(res)
 
-                # --- Compact A + Site conditional ---
-                bin_info = f"{brand} - {bin_type} - {level}" if brand != '-' else '-'
-                country_info = f"{country} {flag}" if country != '-' else '-'
+                # --- Build response with Site ---
+                message = f"""{status_header}
 
-                message = f"""{status_header} — {res.get('gateway', 'Unknown')} — {res.get('price', '-')}
-💳 <code>{res['card']}</code>
-🏦 {bank} • {bin_info} • {country_info}"""
+💳 CC <code>{res['card']}</code>
 
-                if res['status'] in ('Charged', 'Approved'):
-                    message += f"\n🌐 {res.get('site', 'Unknown')}"
+🌐 Site {res.get('site', 'Unknown')}
+🛒 Gateway {res.get('gateway', 'Unknown')}
+💸 Price {res.get('price', '-')}
+📝 Response {res.get('message', '-')[:200]}
+
+🆔 BIN Info {brand} - {bin_type} - {level}
+🏦 Bank {bank}
+🥰 Country {country} {flag}
+
+👤 Checked by @{username}
+
+🐱 Make By MEOW MEOW"""
 
                 # --- Send inline result ---
                 try:
@@ -687,7 +702,7 @@ async def multi_cc_check(event):
             done, pending = await asyncio.wait(workers, timeout=1.0)
             workers = list(pending)
 
-        # --- Final summary ---
+        # --- Final summary with Site ---
         if session_key in active_sessions:
             try:
                 await status_msg.delete()
